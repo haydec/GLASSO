@@ -36,7 +36,6 @@ function Theta_optimal = fitTimeVaryingGraphicalLassoSmoothing(Theta0, S, lasso_
     'MaxIterations', 5000, ...         % Maximum number of iterations (increase if needed)
     'MaxFunctionEvaluations', 1e6);    % Increase the maximum function evaluations
 
-
     % Define the PSD constraints for all time points, if required
     if enforce_psd
         nonlcon = @(Theta_vec) positiveSemidefiniteConstraints(Theta_vec, n, T);

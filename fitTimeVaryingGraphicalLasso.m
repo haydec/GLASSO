@@ -26,8 +26,15 @@ function Theta_optimal = fitTimeVaryingGraphicalLasso(Theta0, S, lasso_penalty,n
     objective = @(Theta_vec) sumGraphicalLassoObjective(Theta_vec, S, lasso_penalty, n, T,num_samples);
 
     % Optimization options
-    Display = 'none'; % Change to 'iter' for debugging or observing convergence
-    options = optimoptions('fmincon', 'Algorithm', 'interior-point', 'Display', Display);
+    Display = 'final'; % Change to 'iter' for debugging or observing convergence
+
+    options = optimoptions('fmincon', ...
+    'Algorithm', 'interior-point', ...
+    'Display', Display, ...            % Shows iteration information; use 'none' if you prefer no display
+    'TolFun', 1e-10, ...               % Function tolerance (smaller values increase precision)
+    'TolX', 1e-10, ...                 % Step size tolerance (smaller values increase precision)
+    'MaxIterations', 5000, ...         % Maximum number of iterations (increase if needed)
+    'MaxFunctionEvaluations', 1e6);    % Increase the maximum function evaluations
 
     % Define the PSD constraints for all time points, if required
     if enforce_psd
