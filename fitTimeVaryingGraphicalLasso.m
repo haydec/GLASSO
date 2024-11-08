@@ -27,8 +27,7 @@ function Theta_optimal = fitTimeVaryingGraphicalLasso(Theta0, S, lasso_penalty,n
 
     % Optimization options
     Display = 'final'; % Change to 'iter' for debugging or observing convergence
-
-    options = optimoptions('fmincon', ...
+     options = optimoptions('fmincon', ...
     'Algorithm', 'interior-point', ...
     'Display', Display, ...            % Shows iteration information; use 'none' if you prefer no display
     'TolFun', 1e-10, ...               % Function tolerance (smaller values increase precision)
