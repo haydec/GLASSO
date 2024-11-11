@@ -49,7 +49,7 @@ samples = reshape(sampledData, sampleSize, numVariables, numFullSamples);
 
 
 rho = 1;
-lambda = 0.1; % Sparsity Penalty 
+lambda = 0.0; % Sparsity Penalty 
 beta = 0.1; % Time Varying Penalty
 
 
@@ -58,7 +58,7 @@ alpha = 1; % alpha is the over-relaxation parameter
 t_start = tic;
 %Global constants and defaults
 QUIET    = 0;
-MAX_ITER = 100;
+MAX_ITER = 1000;
 ABSTOL   = 1e-6;
 RELTOL   = 1e-4;
 
@@ -83,51 +83,25 @@ U2 = zeros(size(S,1),size(S,2),size(S,3));
 
 eta = numFullSamples / (3 * rho);  % Adjusted penalty parameter for the proximal operator
 
-Variables = 1 + (lambda > 0) + (beta > 0);
-
-for k = 1:MAX_ITER
+NumConsesus = 1 + (lambda > 0) + (beta > 0);
+disp(NumConsesus)
+for k = 1:1:MAX_ITER
     
-    for t = 1:1:T
-
-        % Theta Update
-        A = ( Z0(:,:,t) + Z1(:,:,t) +  Z2(:,:,t)) - (U0(:,:,t) + U1(:,:,t) +  U2(:,:,t))/Variables;
-        Asym = (A + A')/2;
-        M = (1/eta)*(Asym) - S(:,:,t); % (rho)*(Asym) - S;
-        [Q,L] = eig(M);
-        es = diag(L);
-        xi = (es + sqrt( es.^2 + 4*(1/eta) )) ./( 2*( 1/eta )); % (es + sqrt(es.^2 + 4*rho))./(2*rho);
-        Theta =  Q*diag(xi)*Q';
-
-
+        Theta_hat = update_theta(Theta_hat,Z0,Z1,Z2,U0,U1,U2,S,eta,NumConsesus,alpha);
+    
         % z-update with relaxation
-        Z0old = Z0(:,:,t);
-        Theta_hat(:,:,t) = alpha*Theta + (1 - alpha)*Z0old;
+        Z0 =  update_z0(Theta_hat,Z0,U0,lambda,rho);
         
-        Z0(:,:,t) = soft_threshold_odd(Theta_hat(:,:,t) + U0(:,:,t), lambda,rho);
+        [Z1,Z2] = update_z1z2(Theta_hat,Z1,Z2,U1,U2,beta,rho);
         
-        if t > 1 & beta > 0
-
-            Adiff = Theta_hat(:,:,t) - Theta_hat(:,:,t-1) + U2(:,:,t)  - U1(:,:,t-1) ; 
-            
-            E = L1_element_wise(Adiff, beta, rho);
-            
-            Asum = Theta_hat(:,:,t-1) + Theta_hat(:,:,t)  + U2(:,:,t) + U1(:,:,t-1);
-            Z1(:,:,t-1) = 0.5*(Asum - E);
-            Z2(:,:,t)   = 0.5*(Asum + E);
-
-        end
-
         
+
         % u-update (Dual Variable) 
-        U0(:,:,t) = U0(:,:,t) + ( Theta_hat(:,:,t) - Z0(:,:,t) );
-        if t > 1 & beta > 0
-            U0(:,:,t-1) = U1(:,:,t-1) + ( Theta_hat(:,:,t-1) - Z1(:,:,t-1) );
-            U0(:,:,t) = U2(:,:,t) + ( Theta_hat(:,:,t) - Z2(:,:,t) );
-        end
+        U0 = update_u0(Theta_hat,U0,Z0);
+        [U1,U2] = update_u1u2(Theta_hat,Z1,Z2,U1,U2,beta);
 
 
-    end
-
+  
 
 
     % diagnostics, reporting, termination checks
@@ -156,6 +130,74 @@ for k = 1:MAX_ITER
 end
 
 disp(Theta_hat)
+
+
+function Theta_hat = update_theta(Theta_hat,Z0,Z1,Z2,U0,U1,U2,S,eta,NumConsesus,alpha)
+        T = size(S,3);
+        for t = 1:1:T
+
+            % Theta Update
+            A = ( ( Z0(:,:,t) + Z1(:,:,t) +  Z2(:,:,t)) - (U0(:,:,t) + U1(:,:,t) +  U2(:,:,t)) )/NumConsesus;
+            Asym = (A + A')/2;
+            M = (1/eta)*(Asym) - S(:,:,t); % (rho)*(Asym) - S;
+            [Q,L] = eig(M);
+            es = diag(L);
+            xi = (es + sqrt( es.^2 + 4*(1/eta) )) ./( 2*( 1/eta )); % (es + sqrt(es.^2 + 4*rho))./(2*rho);
+            Theta =  Q*diag(xi)*Q';
+    
+    
+            
+            Z0old = Z0(:,:,t);
+            Theta_hat(:,:,t) = alpha*Theta + (1 - alpha)*Z0old;
+        end
+
+end
+
+
+function Z0 =  update_z0(Theta_hat,Z0,U0,lambda,rho)
+    T = size(Theta_hat,3);
+    for t = 1:1:T
+        Z0(:,:,t) = soft_threshold_odd(Theta_hat(:,:,t) + U0(:,:,t), lambda,rho);
+    end
+
+end
+
+function [Z1,Z2] = update_z1z2(Theta_hat,Z1,Z2,U1,U2,beta,rho)
+        
+        if beta > 0
+            T = size(Theta_hat,3);
+            for t = 2:1:T
+                Adiff = Theta_hat(:,:,t) - Theta_hat(:,:,t-1) + U2(:,:,t)  - U1(:,:,t-1) ; 
+                
+                E = L1_element_wise(Adiff, beta, rho);
+                
+                Asum = Theta_hat(:,:,t-1) + Theta_hat(:,:,t)  + U2(:,:,t) + U1(:,:,t-1);
+                Z1(:,:,t-1) = 0.5*(Asum - E);
+                Z2(:,:,t)   = 0.5*(Asum + E);
+            end
+        end
+
+end
+
+function U0 = update_u0(Theta_hat,U0,Z0)
+        
+    T = size(Theta_hat,3);
+    for t = 1:1:T
+        U0(:,:,t) = U0(:,:,t) + ( Theta_hat(:,:,t) - Z0(:,:,t) );
+    end
+end
+
+function [U1,U2] = update_u1u2(Theta_hat,Z1,Z2,U1,U2,beta)
+
+    if beta > 0
+        T = size(Theta_hat,3);
+        for t = 2:1:T   
+            U1(:,:,t-1) = U1(:,:,t-1) + ( Theta_hat(:,:,t-1) - Z1(:,:,t-1) );
+            U2(:,:,t) = U2(:,:,t) + ( Theta_hat(:,:,t) - Z2(:,:,t) );
+        end
+    end
+
+end
 
 
 function y = shrinkage(a, kappa)

@@ -58,7 +58,7 @@ alpha = 1; % alpha is the over-relaxation parameter
 t_start = tic;
 %Global constants and defaults
 QUIET    = 0;
-MAX_ITER = 100;
+MAX_ITER = 1000;
 ABSTOL   = 1e-6;
 RELTOL   = 1e-4;
 
@@ -100,10 +100,11 @@ for k = 1:MAX_ITER
         Theta =  Q*diag(xi)*Q';
 
 
-        % z-update with relaxation
+        
         Z0old = Z0(:,:,t);
         Theta_hat(:,:,t) = alpha*Theta + (1 - alpha)*Z0old;
-        
+    
+        % z-update with relaxation
         Z0(:,:,t) = soft_threshold_odd(Theta_hat(:,:,t) + U0(:,:,t), lambda,rho);
         
         if t > 1 & beta > 0

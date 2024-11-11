@@ -64,11 +64,11 @@ max_rho = 10;                  % Maximum rho value
 min_rho = 0.01;                % Minimum rho value
 
 
-lambda = 0.1;
+lambda = 0;
 beta = 0;
-penalty_type = 'l2';
+penalty_type = 'l1';
 
-max_iter = 100000;
+max_iter = 10000;
 tol = 1e-4;
 
 
