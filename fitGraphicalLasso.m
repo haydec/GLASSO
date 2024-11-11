@@ -1,13 +1,14 @@
 % Main function to fit Graphical Lasso model with optional Lasso penalty and PSD constraint
-function Theta_optimal = fitGraphicalLasso(Theta0, S, lasso_penalty, enforce_psd)
+function Theta_optimal = fitGraphicalLasso(D, lasso_penalty, enforce_psd)
     % Fit a graphical lasso model with Lasso regularization using fmincon in MATLAB.
     % Input:
     % - S: Empirical covariance matrix
     % - lasso_penalty: Regularization parameter for sparsity
     % - enforce_psd: Boolean flag, if true, enforces positive semidefinite constraint
     % Output:
-    % - Theta_optimal: Estimated precision matrix with sparsity
-
+    % - Theta_optimal: Estimated precision matrix with sparsity    
+    S = cov(D);
+    Theta0 = eye(size(S,1),size(S,2));
     d = size(S, 1);  % Dimension of the covariance matrix   
     Theta_upper0 = Theta0(triu(true(d))); % Extract upper triangular part
 
