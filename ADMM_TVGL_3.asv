@@ -78,20 +78,20 @@ end
 
 for k = 1:1:MAX_ITER
         
-    Z0prev = Z0; % For Diagnostics (Check Convergence)
-    Z1prev = Z1; % For Diagnostics (Check Convergence)
-    Z2prev = Z2; % For Diagnostics (Check Convergence)
-    U0prev = U0; % For Diagnostics (Check Convergence)
-    U1prev = U1; % For Diagnostics (Check Convergence)
-    U2prev = U2; % For Diagnostics (Check Convergence)
-    
-    % Update Precision Matrix
+    Z0prev = Z0;
+    Z1prev = Z1;
+    Z2prev = Z2;
+    U0prev = U0;
+    U1prev = U1;
+    U2prev = U2;
+
     Theta_hat = update_theta(Theta_hat,Z0,Z1,Z2,U0,U1,U2,S,eta,lambda,beta,alpha);
 
     % z-update with relaxation
     Z0 =  update_z0(Theta_hat,Z0,U0,lambda,rho);    
     [Z1,Z2] = update_z1z2(Theta_hat,Z1,Z2,U1,U2,beta,rho);
-       
+    
+    
 
     % u-update (Dual Variable) 
     U0 = update_u0(Theta_hat,U0,Z0,lambda);
