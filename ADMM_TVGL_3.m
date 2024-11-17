@@ -1,7 +1,15 @@
 clear
 clc
+
+rho = 0.01;
+lambda = 0.001; % Sparsity Penalty 
+beta = 0; % Time Varying Penalty
+MAX_ITER = 1;
+alpha = 1; % alpha is the over-relaxation parameter
+
+
 disp("------------START------------------")
-n_samples = 10000000;
+n_samples = 10000;
 sections = 2;
 n = 5;
 mean_value = 0;
@@ -9,147 +17,188 @@ std_dev = repelem(0.01,sections);
 
 [D,pre_tensor,cov_tensor] = GenerateSamples( n_samples,sections,n,mean_value,std_dev);
 
-rho = 0.01;
-lambda = 0.001; % Sparsity Penalty 
-beta = 0; % Time Varying Penalty
-
-
-alpha = 1; % alpha is the over-relaxation parameter
+NumberOfObservations = size(D,1);
+NumberOfVariables = size(D,2);
+NumberOfSections = size(D,3);
 
 t_start = tic;
 %Global constants and defaults
 QUIET    = 0;
-MAX_ITER = 1;
 ABSTOL   = 1e-4;
 RELTOL   = 1e-2;
 
-S = zeros(size(D,2),size(D,2),size(D,3));
+S = zeros(NumberOfVariables,NumberOfVariables,1);
 %Data preprocessing
-for t = 1:1:size(D,3)
+for t = 1:1:1
     S(:,:,t) = cov(D(:,:,1)); % t = 1 !!!!!!!!!!!!!!!!!!!!!!
 end
-n = size(S,1); % Number Of Variables
-T = size(S,3); % Number Of Timesteps
 
-% Precision Variables
-Theta_hat = zeros(size(S,1),size(S,2),size(S,3));
-
-% Consensus Variables
-Z0 = zeros(size(S,1),size(S,2),size(S,3));
-Z1 = zeros(size(S,1),size(S,2),size(S,3));
-Z2 = zeros(size(S,1),size(S,2),size(S,3));
-
-% Dual Variables
-U0 = zeros(size(S,1),size(S,2),size(S,3));
-U1 = zeros(size(S,1),size(S,2),size(S,3));
-U2 = zeros(size(S,1),size(S,2),size(S,3));
+%disp("Empirical Covariance")
+%disp(S)
+%disp(size(S))
 
 
-eta = n_samples / (3 * rho);  % Adjusted penalty parameter for the proximal operator
 
-BetaConsesus = 2*(beta > 0);
-LambdaConsensus = (lambda > 0);
-NumConsensus = LambdaConsensus + BetaConsesus;
-disp("Number Of Consesus Variables: " + num2str(NumConsensus))
-
-if NumConsensus < 1
-    disp("TVGL via ADMM not defined for no constraints" )
-    return
-end
-
-disp("Empirical Covariance")
-disp(S)
-
-for k = 1:1:MAX_ITER
-        
-    Z0prev = Z0; % For Diagnostics (Check Convergence)
-    Z1prev = Z1; % For Diagnostics (Check Convergence)
-    Z2prev = Z2; % For Diagnostics (Check Convergence)
-    U0prev = U0; % For Diagnostics (Check Convergence)
-    U1prev = U1; % For Diagnostics (Check Convergence)
-    U2prev = U2; % For Diagnostics (Check Convergence)
-    
-    % Update Precision Matrix
-    Theta_hat = update_theta(Z0,Z1,Z2,U0,U1,U2,S,eta,lambda,beta,alpha);
-    %disp("--Theta_hat--")
-    %disp(Theta_hat)
-
-    % z-update with relaxation
-    Z0 =  update_z0(Theta_hat,U0,lambda,rho); 
-    %disp("--Z0--")
-    %disp(Z0)
-    %[Z1,Z2] = update_z1z2(Theta_hat,Z1,Z2,U1,U2,beta,rho);
-       
-
-    % u-update (Dual Variable) 
-    U0 = update_u0(Theta_hat,U0,Z0,lambda);
-    %disp("--U0--")
-    %disp(U0)
-    %[U1,U2] = update_u1u2(Theta_hat,Z1,Z2,U1,U2,beta);
-
-
-  
-
-    
-    % diagnostics, reporting, termination checks
-    %{
-    history.objval(k)  = objective(S, Theta_hat, Z0,Z1,Z2, lambda,beta,T);
-    
-    r0 = 0;
-    for t = 1:1:T      
-        r0 = r0 + norm(Theta_hat(:,:,t) - Z0(:,:,t), 'fro');
-    end
-    r1 = 0;
-    r2 = 0;
-
-    if beta > 0
-        for t = 2:1:T
-            r1 = r1 + norm(Z1(:,:,t) - Z1(:,:,t-1), 'fro');
-            r2 = r2 + norm(Theta_hat(:,:,t) - Z2(:,:,t-1), 'fro');
-        end
-    end
-    
-    d0 = 0;
-    for t = 1:1:T      
-        d0 = d0 + norm(Z0(:,:,t) - Z0prev(:,:,t), 'fro');
-    end
-    
-    d1 = 0;
-    d2 = 0;
-    if beta > 0
-        for t = 2:1:T
-            d1 = d1 + norm(Z1(:,:,t) - Z1prev(:,:,t-1), 'fro');
-            d2 = d2 + norm(Z2(:,:,t) - Z2prev(:,:,t-1), 'fro');
-        end
-    end
-
-
-    history.r_norm(k)  = sqrt(r0 + r1 + r2);
-    history.s_norm(k)  = rho*sqrt(d0 + d1 + d2);
-
-    history.eps_pri(k) = sqrt(3*n)*ABSTOL + RELTOL*max([norm(Theta_hat,'fro'), norm(Z0,'fro'), norm(Z1,'fro'), norm(Z2,'fro')]);
-    history.eps_dual(k)= sqrt(3*n)*ABSTOL + RELTOL*rho*sqrt( norm(U0,'fro') + norm(U1,'fro') + norm(U2,'fro') );
-
-
-    if ~QUIET
-        fprintf('%3d\t%10.4f\t%10.4f\t%10.4f\t%10.4f\t%10.2f\n', k, ...
-            history.r_norm(k), history.eps_pri(k), ...
-            history.s_norm(k), history.eps_dual(k), history.objval(k));
-    end
-
-    if (history.r_norm(k) < history.eps_pri(k) && ...
-       history.s_norm(k) < history.eps_dual(k))
-         break;
-    end
- 
-%}
-
-end
+Theta_hat = fitTVGL(S,lambda,beta,n_samples,rho,MAX_ITER,alpha);
 fprintf('iter\t primal_norm\t primal_tol\t dual_norm\t dual_tol\t Obj\n')
 disp("THETA HAT 1st TimeStep")
 disp(Theta_hat(:,:,1))
 disp("Pre Tensor 1st TimeStep")
 disp(pre_tensor(:,:,1))
+
+
+disp("------------START 2------------------")
+
+sections = 2;
+NumberOfVariables = size(D,2);
+
+
+S = zeros(NumberOfVariables,NumberOfVariables,sections);
+%Data preprocessing
+for t = 1:1:sections 
+    S(:,:,t) = cov(D(:,:,1)); % t = 1 !!!!!!!!!!!!!!!!!!!!!!
+end
+
+%disp("Empirical Covariance")
+%disp(S)
+%disp(size(S))
+
+Theta_hat = fitTVGL(S,lambda,beta,n_samples,rho,MAX_ITER,alpha);
+fprintf('iter\t primal_norm\t primal_tol\t dual_norm\t dual_tol\t Obj\n')
+disp("THETA HAT 1st TimeStep")
+disp(Theta_hat(:,:,1))
+disp("Pre Tensor 1st TimeStep")
+disp(pre_tensor(:,:,1))
+
+
+
+
+function Theta_hat = fitTVGL(S,lambda,beta,n_samples,rho,MAX_ITER,alpha)
+    
+    n = size(S,1); % Number Of Variables
+    T = size(S,3); % Number Of Timesteps
+
+    eta = n_samples / (3 * rho);  % Adjusted penalty parameter for the proximal operator
+
+    BetaConsesus = 2*(beta > 0);
+    LambdaConsensus = (lambda > 0);
+    NumConsensus = LambdaConsensus + BetaConsesus;
+    disp("Number Of Consesus Variables: " + num2str(NumConsensus))
+    
+    if NumConsensus < 1
+        disp("TVGL via ADMM not defined for no constraints" )
+        return
+    end
+        
+    % Precision Variables
+    Theta_hat = zeros(size(S,1),size(S,2),size(S,3));
+    
+    % Consensus Variables
+    Z0 = zeros(size(S,1),size(S,2),size(S,3));
+    Z1 = zeros(size(S,1),size(S,2),size(S,3));
+    Z2 = zeros(size(S,1),size(S,2),size(S,3));
+    
+    % Dual Variables
+    U0 = zeros(size(S,1),size(S,2),size(S,3));
+    U1 = zeros(size(S,1),size(S,2),size(S,3));
+    U2 = zeros(size(S,1),size(S,2),size(S,3));
+
+
+    t_start = tic;
+    %Global constants and defaults
+    QUIET    = 0;
+    ABSTOL   = 1e-4;
+    RELTOL   = 1e-2;
+
+
+    for k = 1:1:MAX_ITER
+            
+        Z0prev = Z0; % For Diagnostics (Check Convergence)
+        Z1prev = Z1; % For Diagnostics (Check Convergence)
+        Z2prev = Z2; % For Diagnostics (Check Convergence)
+        U0prev = U0; % For Diagnostics (Check Convergence)
+        U1prev = U1; % For Diagnostics (Check Convergence)
+        U2prev = U2; % For Diagnostics (Check Convergence)
+        
+        % Update Precision Matrix
+        Theta_hat = update_theta(Z0,Z1,Z2,U0,U1,U2,S,eta,lambda,beta,alpha);
+        %disp("--Theta_hat--")
+        %disp(Theta_hat)
+    
+        % z-update with relaxation
+        Z0 =  update_z0(Theta_hat,U0,lambda,rho); 
+        %disp("--Z0--")
+        %disp(Z0)
+        %[Z1,Z2] = update_z1z2(Theta_hat,Z1,Z2,U1,U2,beta,rho);
+           
+    
+        % u-update (Dual Variable) 
+        U0 = update_u0(Theta_hat,U0,Z0,lambda);
+        %disp("--U0--")
+        %disp(U0)
+        %[U1,U2] = update_u1u2(Theta_hat,Z1,Z2,U1,U2,beta);
+    
+    
+      
+    
+        
+        % diagnostics, reporting, termination checks
+        %{
+        history.objval(k)  = objective(S, Theta_hat, Z0,Z1,Z2, lambda,beta,T);
+        
+        r0 = 0;
+        for t = 1:1:T      
+            r0 = r0 + norm(Theta_hat(:,:,t) - Z0(:,:,t), 'fro');
+        end
+        r1 = 0;
+        r2 = 0;
+    
+        if beta > 0
+            for t = 2:1:T
+                r1 = r1 + norm(Z1(:,:,t) - Z1(:,:,t-1), 'fro');
+                r2 = r2 + norm(Theta_hat(:,:,t) - Z2(:,:,t-1), 'fro');
+            end
+        end
+        
+        d0 = 0;
+        for t = 1:1:T      
+            d0 = d0 + norm(Z0(:,:,t) - Z0prev(:,:,t), 'fro');
+        end
+        
+        d1 = 0;
+        d2 = 0;
+        if beta > 0
+            for t = 2:1:T
+                d1 = d1 + norm(Z1(:,:,t) - Z1prev(:,:,t-1), 'fro');
+                d2 = d2 + norm(Z2(:,:,t) - Z2prev(:,:,t-1), 'fro');
+            end
+        end
+    
+    
+        history.r_norm(k)  = sqrt(r0 + r1 + r2);
+        history.s_norm(k)  = rho*sqrt(d0 + d1 + d2);
+    
+        history.eps_pri(k) = sqrt(3*n)*ABSTOL + RELTOL*max([norm(Theta_hat,'fro'), norm(Z0,'fro'), norm(Z1,'fro'), norm(Z2,'fro')]);
+        history.eps_dual(k)= sqrt(3*n)*ABSTOL + RELTOL*rho*sqrt( norm(U0,'fro') + norm(U1,'fro') + norm(U2,'fro') );
+    
+    
+        if ~QUIET
+            fprintf('%3d\t%10.4f\t%10.4f\t%10.4f\t%10.4f\t%10.2f\n', k, ...
+                history.r_norm(k), history.eps_pri(k), ...
+                history.s_norm(k), history.eps_dual(k), history.objval(k));
+        end
+    
+        if (history.r_norm(k) < history.eps_pri(k) && ...
+           history.s_norm(k) < history.eps_dual(k))
+             break;
+        end
+     
+    %}
+    
+    end
+
+end
+
 
 function Theta_hat = update_theta(Z0,Z1,Z2,U0,U1,U2,S,eta,lambda,beta,alpha)
 
@@ -161,12 +210,12 @@ function Theta_hat = update_theta(Z0,Z1,Z2,U0,U1,U2,S,eta,lambda,beta,alpha)
         
             % Theta Update
             
-            Asym = (A + A')/2
-            M = (1/eta)*(Asym) - S(:,:,t) % (rho)*(Asym) - S;
-            [Q,L] = eigs(M)
-            es = diag(L)
-            xi = (es + sqrt( es.^2 + 4*(1/eta) )) ./( 2*( 1/eta )) % (es + sqrt(es.^2 + 4*rho))./(2*rho);
-            Theta =  Q*diag(xi)*Q'
+            Asym = (A + A')/2;
+            M = (1/eta)*(Asym) - S(:,:,t); % (rho)*(Asym) - S;
+            [Q,L] = eigs(M);
+            es = diag(L);
+            xi = (es + sqrt( es.^2 + 4*(1/eta) )) ./( 2*( 1/eta )); % (es + sqrt(es.^2 + 4*rho))./(2*rho);
+            Theta =  Q*diag(xi)*Q';
     
     
             
@@ -324,3 +373,84 @@ function E = L1_element_wise(A, beta, rho)
 end
 
 
+function [samples,pre_tensor,cov_tensor] = GenerateSamples( n_samples,sections,n,mean_value,std_dev)
+    
+    assert(length(std_dev) == sections, "Standard Devivation array must equal the number of Sections")
+
+
+    [pre_tensor, cov_tensor] = dispersion_tensor(sections,n,mean_value,std_dev);
+    
+    
+    
+    % Number of samples to generate
+    data = GenerateRandomData(n,cov_tensor,n_samples,sections);
+    
+    plot(data)
+    
+
+    [numObservations, numVariables] = size(data);
+    numFullSamples = floor(numObservations / n_samples);
+    
+    % Extract only the data that fits into full samples
+    sampledData = data(1:numFullSamples * n_samples, :);
+    
+    % Reshape into samples with dimensions [sampleSize, numVariables, numFullSamples]
+    samples = reshape(sampledData, n_samples, numVariables, numFullSamples);
+
+
+
+    function [pre_tensor, cov_tensor] = dispersion_tensor(sections,n,mean_value,std_dev)
+        
+        pre_tensor = zeros(n,n,sections);
+        cov_tensor = zeros(n,n,sections);
+        
+        for s = 1:1:sections
+            [pre_matrix, cov_matrix] = dispersion_matrix(n,mean_value,std_dev(s));
+            pre_tensor(:,:,s) = pre_matrix;
+            cov_tensor(:,:,s) = cov_matrix;
+        end
+    
+    end
+
+    function [pre_matrix, cov_matrix] = dispersion_matrix(n,mean_value,std_dev)
+        % Generate random numbers from the specified normal distribution
+        matrix = mean_value + std_dev * randn(n, n);
+        
+        % Construct the positive definite covariance matrix
+        cov_matrix = matrix' * matrix;
+        
+        % Scale the matrix to have variances close to 1 on the diagonal (optional)
+        cov_matrix = cov_matrix ./ max(abs(diag(cov_matrix)));
+        isPositiveDef(cov_matrix)
+        
+        % precision matrix
+        pre_matrix = inv(cov_matrix);
+        isPositiveDef(pre_matrix)
+    end
+    
+    
+    function data = GenerateRandomData(num_variables,true_covariance,n_samples,sections)
+        
+        data = zeros(n_samples*sections,num_variables);
+        Start = 1;
+        End = n_samples;
+        for s = 1:1:sections
+        
+            rng(0);  % Set random seed for reproducibility
+            data(Start:End,:) = mvnrnd(zeros(1, num_variables), true_covariance(:,:,s), n_samples);
+            Start = Start + n_samples;
+            End = End + n_samples;
+        end
+    
+    end
+
+    
+    function isPositiveDef(X)
+        % Check that true_precision is positive definite
+        eigvals = eig(X);
+        if any(eigvals <= 0)
+            disp('matrix is not positive definite');
+        end
+    end
+
+end
