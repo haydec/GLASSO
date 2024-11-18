@@ -1,76 +1,80 @@
+close All
 clear
 clc
 
 rho = 0.01;
 lambda = 0.001; % Sparsity Penalty 
-beta = 0; % Time Varying Penalty
-MAX_ITER = 1;
+beta = 10000000000000000000; % Time Varying Penalty
+MAX_ITER = 1000;
 alpha = 1; % alpha is the over-relaxation parameter
 
 
-disp("------------START------------------")
-n_samples = 10000;
-sections = 2;
+
+
+disp("------------Generate Data------------------")
+n_samples = 1000;
+sections = 10;
 n = 5;
 mean_value = 0;
-std_dev = repelem(0.01,sections);
+%std_dev = repelem(0.1,sections);
+std_dev = linspace(0.1,1,sections);
+%std_dev = randi([1 100],1,sections)/100
 
-[D,pre_tensor,cov_tensor] = GenerateSamples( n_samples,sections,n,mean_value,std_dev);
-
+RandMatrixSeed = randn(n,n);
+[D,pre_tensor,cov_tensor] = GenerateSamples( n_samples,sections,n,mean_value,std_dev,RandMatrixSeed);
+disp("D Size: " + num2str(size(D)))
 NumberOfObservations = size(D,1);
 NumberOfVariables = size(D,2);
 NumberOfSections = size(D,3);
 
-t_start = tic;
-%Global constants and defaults
-QUIET    = 0;
-ABSTOL   = 1e-4;
-RELTOL   = 1e-2;
+
+% Efficient concatenation without a loop
+Dplot = reshape(permute(D, [1, 3, 2]), [], size(D, 2));
+
+% Plot the concatenated data
+
+
 
 S = zeros(NumberOfVariables,NumberOfVariables,NumberOfSections);
 %Data preprocessing
 for t = 1:1:NumberOfSections
-    S(:,:,t) = cov(D(:,:,1)); % t = 1 !!!!!!!!!!!!!!!!!!!!!!
+    S(:,:,t) = cov(D(:,:,t)); % t = 1 !!!!!!!!!!!!!!!!!!!!!!
 end
-
-disp("Empirical Covariance")
-disp(S)
-disp(size(S))
-
 
 
 Theta_hat = fitTVGL(S,lambda,beta,n_samples,rho,MAX_ITER,alpha);
-fprintf('iter\t primal_norm\t primal_tol\t dual_norm\t dual_tol\t Obj\n')
-disp("THETA HAT 1st TimeStep")
-disp(Theta_hat(:,:,1))
-disp("Pre Tensor 1st TimeStep")
-disp(pre_tensor(:,:,1))
 
-
-disp("------------START 2------------------")
-
-sections = 2;
-NumberOfVariables = size(D,2);
-
-
-S = zeros(NumberOfVariables,NumberOfVariables,sections);
-%Data preprocessing
-for t = 1:1:2
-    S(:,:,t) = cov(D(:,:,1)); % t = 1 !!!!!!!!!!!!!!!!!!!!!!
+ printResult = true;
+if printResult == true
+    fprintf('iter\t primal_norm\t primal_tol\t dual_norm\t dual_tol\t Obj\n')
+    disp("THETA HAT 1st TimeStep")
+    idx = randi(size(Theta_hat,3),1,1);
+    disp("At Index: " + idx)
+    disp(Theta_hat(:,:,idx))
+    disp("Pre Tensor 1st TimeStep")
+    disp(pre_tensor(:,:,idx))
 end
 
-disp("Empirical Covariance")
-disp(S)
-disp(size(S))
 
-Theta_hat = fitTVGL(S,lambda,beta,n_samples,rho,MAX_ITER,alpha);
-fprintf('iter\t primal_norm\t primal_tol\t dual_norm\t dual_tol\t Obj\n')
-disp("THETA HAT 1st TimeStep")
-disp(Theta_hat(:,:,1))
-disp("Pre Tensor 1st TimeStep")
-disp(pre_tensor(:,:,1))
+% Calculate Frobenius Norm
+T = size(Theta_hat,3); % Number Of Timesteps
+ThetaNormF= zeros(1,T-1);
+PrecisNormF = zeros(1,T-1);
+for t = 2:1:T
+    Theta_Diff = Theta_hat(:,:,t) - Theta_hat(:,:,t-1);
+    ThetaNormF(t-1) = norm(Theta_Diff,"fro");
 
 
+end
+
+
+figure
+subplot(1,2,1)
+plot(Dplot)
+title("Timeseries")
+subplot(1,2,2)
+plot(NormF)
+title("Frobenius Norm: \Theta_{T}-\Theta_{T-1} ")
 
 
 function Theta_hat = fitTVGL(S,lambda,beta,n_samples,rho,MAX_ITER,alpha)
@@ -129,14 +133,14 @@ function Theta_hat = fitTVGL(S,lambda,beta,n_samples,rho,MAX_ITER,alpha)
         Z0 =  update_z0(Theta_hat,U0,lambda,rho); 
         %disp("--Z0--")
         %disp(Z0)
-        %[Z1,Z2] = update_z1z2(Theta_hat,Z1,Z2,U1,U2,beta,rho);
+        [Z1,Z2] = update_z1z2(Theta_hat,Z1,Z2,U1,U2,beta,rho);
            
     
         % u-update (Dual Variable) 
         U0 = update_u0(Theta_hat,U0,Z0,lambda);
         %disp("--U0--")
         %disp(U0)
-        %[U1,U2] = update_u1u2(Theta_hat,Z1,Z2,U1,U2,beta);
+        [U1,U2] = update_u1u2(Theta_hat,Z1,Z2,U1,U2,beta);
     
     
       
@@ -205,8 +209,9 @@ function Theta_hat = update_theta(Z0,Z1,Z2,U0,U1,U2,S,eta,lambda,beta,alpha)
         Theta_hat = zeros(size(S));
         T = size(S,3);
         for t = 1:1:T
-            disp("------------------------------")
+            %disp("------------------------------")
             A = ( ( Z0(:,:,t) + Z1(:,:,t) +  Z2(:,:,t) ) - ( U0(:,:,t) + U1(:,:,t) +  U2(:,:,t) ) )/( (lambda>0) + 2*(beta>0)  );
+            %A = round(A,5);
         
             % Theta Update
             
@@ -373,55 +378,56 @@ function E = L1_element_wise(A, beta, rho)
 end
 
 
-function [samples,pre_tensor,cov_tensor] = GenerateSamples( n_samples,sections,n,mean_value,std_dev)
+function [samples,pre_tensor,cov_tensor] = GenerateSamples( n_samples,sections,n,mean_value,std_dev,RandMatrixSeed)
     
     assert(length(std_dev) == sections, "Standard Devivation array must equal the number of Sections")
 
 
-    [pre_tensor, cov_tensor] = dispersion_tensor(sections,n,mean_value,std_dev);
+    [pre_tensor, cov_tensor] = dispersion_tensor(sections,n,mean_value,std_dev,RandMatrixSeed);
     
     
     
     % Number of samples to generate
-    data = GenerateRandomData(n,cov_tensor,n_samples,sections);
+    samples = GenerateRandomData(n,cov_tensor,n_samples,sections);
     
-    plot(data)
+    
     
 
-    [numObservations, numVariables] = size(data);
-    numFullSamples = floor(numObservations / n_samples);
+    %[numObservations, numVariables] = size(data);
+    %numFullSamples = floor(numObservations / n_samples);
     
     % Extract only the data that fits into full samples
-    sampledData = data(1:numFullSamples * n_samples, :);
+    %sampledData = data(1:numFullSamples * n_samples, :);
     
     % Reshape into samples with dimensions [sampleSize, numVariables, numFullSamples]
-    samples = reshape(sampledData, n_samples, numVariables, numFullSamples);
+    %samples = reshape(sampledData, n_samples, numVariables, numFullSamples);
 
 
 
-    function [pre_tensor, cov_tensor] = dispersion_tensor(sections,n,mean_value,std_dev)
+    function [pre_tensor, cov_tensor] = dispersion_tensor(sections,n,mean_value,std_dev,RandMatrixSeed)
         
         pre_tensor = zeros(n,n,sections);
         cov_tensor = zeros(n,n,sections);
-        
+
+                
         for s = 1:1:sections
-            [pre_matrix, cov_matrix] = dispersion_matrix(n,mean_value,std_dev(s));
+            [pre_matrix, cov_matrix] = dispersion_matrix(mean_value,std_dev(s),RandMatrixSeed);
             pre_tensor(:,:,s) = pre_matrix;
             cov_tensor(:,:,s) = cov_matrix;
         end
     
     end
 
-    function [pre_matrix, cov_matrix] = dispersion_matrix(n,mean_value,std_dev)
+    function [pre_matrix, cov_matrix] = dispersion_matrix(mean_value,std_dev,RandMatrix)
         % Generate random numbers from the specified normal distribution
-        matrix = mean_value + std_dev * randn(n, n);
+        matrix = mean_value + std_dev*RandMatrix;
         
         % Construct the positive definite covariance matrix
         cov_matrix = matrix' * matrix;
         
         % Scale the matrix to have variances close to 1 on the diagonal (optional)
-        cov_matrix = cov_matrix ./ max(abs(diag(cov_matrix)));
-        isPositiveDef(cov_matrix)
+        %cov_matrix = cov_matrix ./ max(abs(diag(cov_matrix)));
+        %isPositiveDef(cov_matrix)
         
         % precision matrix
         pre_matrix = inv(cov_matrix);
@@ -431,15 +437,12 @@ function [samples,pre_tensor,cov_tensor] = GenerateSamples( n_samples,sections,n
     
     function data = GenerateRandomData(num_variables,true_covariance,n_samples,sections)
         
-        data = zeros(n_samples*sections,num_variables);
-        Start = 1;
-        End = n_samples;
+        data = zeros(n_samples,num_variables,sections);
         for s = 1:1:sections
         
-            rng(0);  % Set random seed for reproducibility
-            data(Start:End,:) = mvnrnd(zeros(1, num_variables), true_covariance(:,:,s), n_samples);
-            Start = Start + n_samples;
-            End = End + n_samples;
+            %rng(0);  % Set random seed for reproducibility
+            data(:,:,s) = mvnrnd(zeros(1, num_variables), true_covariance(:,:,s), n_samples);
+
         end
     
     end
